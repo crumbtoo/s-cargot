@@ -8,6 +8,8 @@ module Data.SCargot.Common ( -- $intro
                            , parseHaskellIdent
                            , parseHaskellVariable
                            , parseHaskellConstructor
+                             -- * String Literal Parsers
+                           , parseR7RSString
                              -- * Numeric Literal Parsers
                            , signed
                            , prefixedNumber
@@ -34,6 +36,7 @@ import Control.Applicative hiding ((<|>), many)
 #endif
 import           Control.Monad (guard)
 import           Data.Char
+import           Data.Functor (($>))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Text.Parsec
@@ -214,6 +217,32 @@ parseXIDIdentStrict = T.pack <$> ((:) <$> hasCat xidStart
 parseXIDIdentGeneral :: Parser Text
 parseXIDIdentGeneral = T.pack <$> ((:) <$> (hasCat xidStart <|> char '_')
                                        <*> many (hasCat xidContinue))
+
+-- | Parse a string literal according to the R7RS Scheme standaard. The typical
+--   C-like escape sequences (@\\a@, @\\b@, @\\t@, @\\n@, @\\r@, @\\\\@, @\\"@)
+--   are supported. Strings may span multiple lines without including the
+--   spanned whitespace by including a backslash as the first non-whitespace
+--   character before the EOL.
+parseR7RSString :: Parser Text
+parseR7RSString = T.pack <$> (  char '"'
+                             *> (concat <$> many strElem)
+                             <* char '"')
+  where
+    strElem = normal
+          <|> mnemonic
+          <|> (pure <$> (char '\\' *> oneOf ['\\', '"']))
+          <|> wsEscape
+    normal = pure <$> noneOf ['\\', '"']
+    mnemonic = char '\\' *> choice
+      [ char 'a' $> "\a"
+      , char 'b' $> "\b"
+      , char 't' $> "\t"
+      , char 'n' $> "\n"
+      , char 'r' $> "\r" ]
+    wsEscape = char '\\' *> many intralineWs *> lineEnd *> many intralineWs
+             $> ""
+    intralineWs = oneOf [' ', '\t']
+    lineEnd = choice [string "\n", string "\r\n", string "\r"]
 
 -- | A helper function for defining parsers for arbitrary-base integers.
 --   The first argument will be the base, and the second will be the
